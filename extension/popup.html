@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>直播音频捕获</title>
+  <style>
+    body {
+      width: 300px;
+      padding: 10px;
+      font-family: Arial, sans-serif;
+    }
+    .status {
+      margin: 10px 0;
+      padding: 5px;
+      border-radius: 4px;
+    }
+    .status.recording {
+      background-color: #ffebee;
+      color: #c62828;
+    }
+    .status.ready {
+      background-color: #e8f5e9;
+      color: #2e7d32;
+    }
+    .audio-info {
+      margin-top: 10px;
+      font-size: 12px;
+    }
+    .info-item {
+      margin: 5px 0;
+    }
+    button {
+      width: 100%;
+      margin: 5px 0;
+      padding: 8px;
+      cursor: pointer;
+    }
+    button:disabled {
+      cursor: not-allowed;
+      opacity: 0.6;
+    }
+  </style>
+</head>
+<body>
+  <div id="statusDisplay" class="status ready">状态: 就绪</div>
+  <button id="startCapture">开始捕获</button>
+  <button id="stopCapture" disabled>停止捕获</button>
+  <div class="audio-info">
+    <div class="info-item">录制时长: <span id="duration">00:00:00</span></div>
+    <div class="info-item">音频格式: <span id="format">-</span></div>
+    <div class="info-item">采样率: <span id="sampleRate">-</span></div>
+    <div class="info-item">声道数: <span id="channels">-</span></div>
+    <div class="info-item">数据大小: <span id="dataSize">0 KB</span></div>
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html> 
