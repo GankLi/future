@@ -9,7 +9,12 @@ let recordingStats = {
   dataSize: 0,
   format: '',
   sampleRate: 0,
-  channels: 0
+  channels: 0,
+  pageInfo: {
+    title: '',
+    url: '',
+    favicon: ''
+  }
 };
 
 let currentState = {
@@ -64,15 +69,21 @@ function cleanupResources() {
     durationTimer = null;
   }
 
-  // 重置状态
+  // 重置状态，但保留页面信息
   startTime = null;
   currentState.isRecording = false;
+  
+  // 保存当前的页面信息
+  const currentPageInfo = recordingStats.pageInfo;
+  
+  // 重置录制统计信息
   recordingStats = {
     duration: 0,
     dataSize: 0,
     format: '',
     sampleRate: 0,
-    channels: 0
+    channels: 0,
+    pageInfo: currentPageInfo  // 保留页面信息
   };
 }
 
@@ -81,71 +92,81 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     // 确保在开始新的捕获前清理旧的资源
     cleanupResources();
     
-    chrome.tabCapture.capture({
-      audio: true,
-      video: false
-    }, (stream) => {
-      if (stream) {
-        try {
-          audioStream = stream;
-          ws = new WebSocket('ws://localhost:8765');
-          
-          ws.onopen = () => {
-            mediaRecorder = new MediaRecorder(stream);
-            startTime = Date.now();
-            currentState.isRecording = true;
-            currentState.error = null;
+    // 获取当前标签页信息
+    chrome.tabs.query({active: true, currentWindow: true}, function(tabs) {
+      const currentTab = tabs[0];
+      recordingStats.pageInfo = {
+        title: currentTab.title || '未知标题',
+        url: currentTab.url || '未知URL',
+        favicon: currentTab.favIconUrl || ''
+      };
+      
+      chrome.tabCapture.capture({
+        audio: true,
+        video: false
+      }, (stream) => {
+        if (stream) {
+          try {
+            audioStream = stream;
+            ws = new WebSocket('ws://localhost:8765');
             
-            const audioTrack = stream.getAudioTracks()[0];
-            const settings = audioTrack.getSettings();
-            recordingStats = {
-              duration: 0,
-              dataSize: 0,
-              format: mediaRecorder.mimeType,
-              sampleRate: settings.sampleRate || 48000,
-              channels: 2
+            ws.onopen = () => {
+              mediaRecorder = new MediaRecorder(stream);
+              startTime = Date.now();
+              currentState.isRecording = true;
+              currentState.error = null;
+              
+              const audioTrack = stream.getAudioTracks()[0];
+              const settings = audioTrack.getSettings();
+              recordingStats = {
+                duration: 0,
+                dataSize: 0,
+                format: mediaRecorder.mimeType,
+                sampleRate: settings.sampleRate || 48000,
+                channels: 2
+              };
+              
+              mediaRecorder.ondataavailable = (event) => {
+                if (event.data.size > 0 && ws.readyState === WebSocket.OPEN) {
+                  recordingStats.dataSize += event.data.size;
+                  ws.send(event.data);
+                  updatePopup();
+                }
+              };
+              
+              mediaRecorder.start(100);
+              updatePopup();
+              
+              // 使用新的定时器变量
+              durationTimer = setInterval(updateDuration, 1000);
             };
             
-            mediaRecorder.ondataavailable = (event) => {
-              if (event.data.size > 0 && ws.readyState === WebSocket.OPEN) {
-                recordingStats.dataSize += event.data.size;
-                ws.send(event.data);
+            ws.onerror = (error) => {
+              currentState.error = "WebSocket连接失败";
+              updatePopup();
+              cleanupResources();
+            };
+
+            // 添加WebSocket关闭处理
+            ws.onclose = () => {
+              if (currentState.isRecording) {
+                currentState.error = "WebSocket连接已关闭";
                 updatePopup();
+                cleanupResources();
               }
             };
             
-            mediaRecorder.start(100);
-            updatePopup();
-            
-            // 使用新的定时器变量
-            durationTimer = setInterval(updateDuration, 1000);
-          };
-          
-          ws.onerror = (error) => {
-            currentState.error = "WebSocket连接失败";
+          } catch (error) {
+            currentState.error = error.message;
             updatePopup();
             cleanupResources();
-          };
-
-          // 添加WebSocket关闭处理
-          ws.onclose = () => {
-            if (currentState.isRecording) {
-              currentState.error = "WebSocket连接已关闭";
-              updatePopup();
-              cleanupResources();
-            }
-          };
-          
-        } catch (error) {
-          currentState.error = error.message;
+          }
+        } else {
+          currentState.error = "无法获取音频流";
           updatePopup();
           cleanupResources();
         }
-      } else {
-        currentState.error = "无法获取音频流";
-        updatePopup();
-        cleanupResources();
-      }
+      });
     });
   } else if (request.action === 'stopCapture') {
     cleanupResources();

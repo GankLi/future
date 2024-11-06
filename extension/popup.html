@@ -39,12 +39,53 @@
       cursor: not-allowed;
       opacity: 0.6;
     }
+    .page-info {
+      margin: 10px 0;
+      padding: 10px;
+      background-color: #f5f5f5;
+      border-radius: 4px;
+      border: 1px solid #ddd;
+      display: none; /* 默认隐藏 */
+    }
+    
+    .page-title {
+      font-weight: bold;
+      margin-bottom: 5px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    
+    .page-favicon {
+      width: 16px;
+      height: 16px;
+      vertical-align: middle;
+      margin-right: 5px;
+    }
+    
+    .divider {
+      height: 1px;
+      background-color: #ddd;
+      margin: 10px 0;
+    }
   </style>
 </head>
 <body>
+  <div class="page-info" id="pageInfoContainer">
+    <div class="page-title">
+      <img id="pageFavicon" class="page-favicon" src="" alt="">
+      <span id="pageTitle">未知标题</span>
+    </div>
+  </div>
+  
+  <div class="divider"></div>
+  
   <div id="statusDisplay" class="status ready">状态: 就绪</div>
   <button id="startCapture">开始捕获</button>
   <button id="stopCapture" disabled>停止捕获</button>
+  
+  <div class="divider"></div>
+  
   <div class="audio-info">
     <div class="info-item">录制时长: <span id="duration">00:00:00</span></div>
     <div class="info-item">音频格式: <span id="format">-</span></div>

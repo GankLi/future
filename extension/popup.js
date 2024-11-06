@@ -20,6 +20,23 @@ function updateUI(data) {
   const statusDisplay = document.getElementById('statusDisplay');
   const startButton = document.getElementById('startCapture');
   const stopButton = document.getElementById('stopCapture');
+  const pageInfoContainer = document.getElementById('pageInfoContainer');
+  
+  // 更新页面信息
+  if (state.isRecording && stats.pageInfo) {
+    pageInfoContainer.style.display = 'block';
+    document.getElementById('pageTitle').textContent = stats.pageInfo.title;
+    
+    const favicon = document.getElementById('pageFavicon');
+    if (stats.pageInfo.favicon) {
+      favicon.src = stats.pageInfo.favicon;
+      favicon.style.display = 'inline';
+    } else {
+      favicon.style.display = 'none';
+    }
+  } else {
+    pageInfoContainer.style.display = 'none';
+  }
   
   // 更新状态显示
   if (state.isRecording) {
