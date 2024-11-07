@@ -47,7 +47,7 @@ class SessionInfo {
       this.ws = null;
     }
 
-    // 停止音流
+    // 停止音频
     if (this.audioStream) {
       try {
         this.audioStream.getTracks().forEach(track => {
@@ -116,18 +116,24 @@ function updatePopupWithTab(tabId, tab) {
     }
 
     const normalizedUrl = normalizeUrl(tab.url);
+    
+    // 修改这里：正确转换 recordingSessions
+    const recordingSessionsArray = Array.from(recordingSessions.entries()).map(([id, session]) => ({
+      tabId: parseInt(id),
+      url: session.url,
+      stats: session.stats
+    }));
+
     console.log('updatePopupWithTab - 当前URL:', {
       originalUrl: tab.url,
       normalizedUrl,
-      recordingSessions: Array.from(recordingSessions.entries()),
-      recordingTabs: Array.from(currentState.recordingTabs.entries())
+      recordingSessions: recordingSessionsArray,  // 使用正确转换的数组
+      recordingTabs: Array.from(currentState.recordingTabs.entries()).map(([id, data]) => ({
+        tabId: parseInt(id),
+        url: data.url,
+        stats: data.stats
+      }))
     });
-
-    const sessions = Array.from(currentState.recordingTabs.entries()).map(([id, data]) => ({
-      tabId: parseInt(id),
-      url: data.url,
-      stats: data.stats
-    }));
 
     const isCurrentUrlRecording = Array.from(currentState.recordingTabs.values())
       .some(data => normalizeUrl(data.url) === normalizedUrl);
@@ -146,7 +152,11 @@ function updatePopupWithTab(tabId, tab) {
           error: currentState.error,
           tabId: tabId,
           url: normalizedUrl,
-          recordingTabs: sessions,
+          recordingTabs: Array.from(currentState.recordingTabs.entries()).map(([id, data]) => ({
+            tabId: parseInt(id),
+            url: data.url,
+            stats: data.stats
+          })),
           pendingConnections: Array.from(currentState.pendingConnections)
         },
         stats: currentState.recordingTabs.get(tabId)?.stats || {
@@ -157,7 +167,7 @@ function updatePopupWithTab(tabId, tab) {
           channels: 0,
           pageInfo: { title: tab.title, url: tab.url, favicon: tab.favIconUrl }
         },
-        sessions: sessions
+        sessions: recordingSessionsArray  // 使用正确转换的数组
       }
     });
   } catch (error) {
@@ -289,8 +299,41 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                     console.log('WebSocket已关闭，停止录制');
                     session.cleanup();
                     recordingSessions.delete(tabId);
-                    currentState.recordingTabs.delete(normalizedUrl);
+                    currentState.recordingTabs.delete(tabId);
                     currentState.error = "WebSocket连接已断开";
+                    
+                    // 发送状态更新消息
+                    chrome.runtime.sendMessage({
+                      type: 'statusUpdate',
+                      data: {
+                        state: {
+                          isRecording: false,
+                          error: currentState.error,
+                          tabId: tabId,
+                          url: normalizedUrl,
+                          recordingTabs: Array.from(currentState.recordingTabs.entries()).map(([id, data]) => ({
+                            tabId: parseInt(id),
+                            url: data.url,
+                            stats: data.stats
+                          })),
+                          pendingConnections: Array.from(currentState.pendingConnections)
+                        },
+                        stats: {
+                          duration: 0,
+                          dataSize: 0,
+                          format: '',
+                          sampleRate: 0,
+                          channels: 0,
+                          pageInfo: { title: '', url: '', favicon: '' }
+                        },
+                        sessions: Array.from(currentState.recordingTabs.entries()).map(([id, data]) => ({
+                          tabId: parseInt(id),
+                          url: data.url,
+                          stats: data.stats
+                        }))
+                      }
+                    });
+                    
                     updatePopup(tabId);
                     return;
                   }
@@ -308,7 +351,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                       console.error('发送音频数据失败:', error);
                       session.cleanup();
                       recordingSessions.delete(tabId);
-                      currentState.recordingTabs.delete(normalizedUrl);
+                      currentState.recordingTabs.delete(tabId);
                       currentState.error = "发送音频数据失败";
                       updatePopup(tabId);
                     }
@@ -416,7 +459,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                   isRecording: true
                 });
               } catch (error) {
-                console.error('录制初始化失败:', error);
+                console.error('录制初始化失��:', error);
                 currentState.error = `录制初始化失败: ${error.message}`;
                 session.cleanup();
                 currentState.pendingConnections.delete(normalizedUrl);
@@ -442,18 +485,54 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
               currentState.pendingConnections.delete(normalizedUrl);
               if (recordingSessions.has(tabId)) {
                 currentState.error = "WebSocket连接已关闭";
-                // 确保在清理前停止 MediaRecorder
-                if (session.mediaRecorder && session.mediaRecorder.state !== 'inactive') {
-                  try {
-                    session.mediaRecorder.stop();
-                  } catch (error) {
-                    console.error('停止 MediaRecorder 失败:', error);
+                
+                // 先发送状态更新消息，清理UI
+                chrome.runtime.sendMessage({
+                  type: 'statusUpdate',
+                  data: {
+                    state: {
+                      isRecording: false,
+                      error: currentState.error,
+                      tabId: tabId,
+                      url: normalizedUrl,
+                      recordingTabs: [],  // 清空录制标签页
+                      pendingConnections: []  // 清空待处理连接
+                    },
+                    stats: {
+                      duration: 0,
+                      dataSize: 0,
+                      format: '',
+                      sampleRate: 0,
+                      channels: 0,
+                      pageInfo: { title: '', url: '', favicon: '' }
+                    },
+                    sessions: []  // 清空会话列表
                   }
-                }
-                session.cleanup();
-                recordingSessions.delete(tabId);
-                currentState.recordingTabs.delete(normalizedUrl);
-                updatePopup(tabId);
+                });
+
+                // 等待一小段时间确保UI更新完成
+                setTimeout(() => {
+                  // 确保在清理前停止 MediaRecorder
+                  if (session.mediaRecorder && session.mediaRecorder.state !== 'inactive') {
+                    try {
+                      session.mediaRecorder.stop();
+                    } catch (error) {
+                      console.error('停止 MediaRecorder 失败:', error);
+                    }
+                  }
+                  session.cleanup();
+                  recordingSessions.delete(tabId);
+                  currentState.recordingTabs.delete(tabId);
+
+                  // 打印状态以验证清理
+                  console.log('WebSocket关闭后的状态:', {
+                    recordingSessions: Array.from(recordingSessions.entries()),
+                    recordingTabs: Array.from(currentState.recordingTabs.entries()),
+                    pendingConnections: Array.from(currentState.pendingConnections)
+                  });
+                  
+                  updatePopup(tabId);
+                }, 100);
               }
             };
             
@@ -616,23 +695,85 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     }
     return true;
   } else if (request.action === 'stopAllCapture') {
-    for (let [tabId, session] of recordingSessions) {
-      session.cleanup();
-      recordingSessions.delete(tabId);
-      currentState.recordingTabs.delete(session.url);
-      updatePopup(tabId);
-    }
-    currentState.error = null;
-    
-    chrome.tabs.query({active: true, currentWindow: true}, function(tabs) {
-      if (tabs[0]) {
-        updatePopup(tabs[0].id);
+    try {
+      // 保存所有需要清理的会话
+      const sessionsToClean = Array.from(recordingSessions.entries());
+      
+      // 清理所有会话
+      for (let [tabId, session] of sessionsToClean) {
+        session.cleanup();
+        recordingSessions.delete(tabId);
+        // 从 recordingTabs 中删除会话
+        currentState.recordingTabs.delete(tabId);
       }
-    });
+      
+      // 完全重置状态
+      currentState = {
+        isRecording: false,
+        error: null,
+        recordingTabs: new Map(),  // 重新初始化为空Map
+        pendingConnections: new Set()  // 重新初始化为空Set
+      };
+      
+      // 获取当前标签页并更新UI
+      chrome.tabs.query({active: true, currentWindow: true}, function(tabs) {
+        if (tabs[0]) {
+          const currentTabId = tabs[0].id;
+          const currentUrl = normalizeUrl(tabs[0].url);
+          
+          // 发送状态更新消息
+          chrome.runtime.sendMessage({
+            type: 'statusUpdate',
+            data: {
+              state: {
+                isRecording: false,
+                error: null,
+                tabId: currentTabId,
+                url: currentUrl,
+                recordingTabs: [],  // 清空录制标签页
+                pendingConnections: []  // 清空待处理连接
+              },
+              stats: {
+                duration: 0,
+                dataSize: 0,
+                format: '',
+                sampleRate: 0,
+                channels: 0,
+                pageInfo: {
+                  title: tabs[0].title,
+                  url: tabs[0].url,
+                  favicon: tabs[0].favIconUrl
+                }
+              },
+              sessions: []  // 清空会话列表
+            }
+          });
+          
+          // 更新UI
+          updatePopup(currentTabId);
+        }
+      });
+
+      console.log('所有会话已清理:', {
+        recordingSessions: Array.from(recordingSessions.entries()),
+        recordingTabs: Array.from(currentState.recordingTabs.entries()),
+        pendingConnections: Array.from(currentState.pendingConnections)
+      });
+    } catch (error) {
+      console.error('清理所有会话时出错:', error);
+      // 确保在出错也重置状态
+      recordingSessions.clear();
+      currentState = {
+        isRecording: false,
+        error: null,
+        recordingTabs: new Map(),
+        pendingConnections: new Set()
+      };
+    }
   }
 });
 
-// 清理监听器
+// 清��监听器
 chrome.runtime.onSuspend.addListener(() => {
   for (let [tabId, session] of recordingSessions) {
     session.cleanup();

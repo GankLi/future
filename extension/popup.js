@@ -47,19 +47,24 @@ function updateSessionsList(sessions) {
     return;
   }
   
-  // 更新会话计数
-  const sessionCount = sessions.length;
-  sessionsCount.textContent = sessionCount;
+  // 总是更新会话计数
+  sessionsCount.textContent = sessions ? sessions.length : 0;
   
   try {
-    // 先清空容器
-    sessionsContainer.innerHTML = `
-      <div id="noSessions" class="no-sessions" style="display: ${sessionCount === 0 ? 'block' : 'none'}">
-        暂无录制会话
-      </div>
-    `;
+    // 总是清空容器
+    sessionsContainer.innerHTML = '';
+    
+    // 添加无会话提示
+    const noSessionsDiv = document.createElement('div');
+    noSessionsDiv.id = 'noSessions';
+    noSessionsDiv.className = 'no-sessions';
+    noSessionsDiv.textContent = '暂无录制会话';
+    sessionsContainer.appendChild(noSessionsDiv);
 
-    if (sessionCount > 0) {
+    // 如果有会话，则隐藏无会话提示并添加会话列表
+    if (sessions && sessions.length > 0) {
+      noSessionsDiv.style.display = 'none';
+      
       // 构建新的会话列表HTML
       chrome.tabs.query({active: true, currentWindow: true}, function(tabs) {
         if (!tabs || !tabs[0]) {
@@ -70,31 +75,42 @@ function updateSessionsList(sessions) {
         const currentTabId = tabs[0].id;
         
         // 为每个会话创建HTML
-        const sessionsHtml = sessions.map(session => {
+        sessions.forEach(session => {
           const isCurrentTab = session.tabId === currentTabId;
           
-          return `
-            <div class="recording-session ${isCurrentTab ? 'current-tab' : ''}" data-tab-id="${session.tabId}">
-              <div class="session-header">
-                <div class="session-title">
-                  <img src="${session.stats.pageInfo.favicon || 'default-favicon.png'}" alt="">
-                  <span>${session.stats.pageInfo.title || '未知标题'}</span>
-                </div>
-                <div class="session-duration">${formatDuration(session.stats.duration || 0)}</div>
+          const sessionDiv = document.createElement('div');
+          sessionDiv.className = `recording-session ${isCurrentTab ? 'current-tab' : ''}`;
+          sessionDiv.setAttribute('data-tab-id', session.tabId);
+          
+          sessionDiv.innerHTML = `
+            <div class="session-header">
+              <div class="session-title">
+                <img src="${session.stats.pageInfo.favicon || 'default-favicon.png'}" alt="">
+                <span>${session.stats.pageInfo.title || '未知标题'}</span>
               </div>
-              <div class="session-info">
-                <div>数据大小: ${formatBytes(session.stats.dataSize || 0)}</div>
-              </div>
+              <div class="session-duration">${formatDuration(session.stats.duration || 0)}</div>
+            </div>
+            <div class="session-info">
+              <div>数据大小: ${formatBytes(session.stats.dataSize || 0)}</div>
             </div>
           `;
-        }).join('');
-
-        // 添加会话列表到容器
-        sessionsContainer.insertAdjacentHTML('beforeend', sessionsHtml);
+          
+          sessionsContainer.appendChild(sessionDiv);
+        });
       });
+    } else {
+      // 显示无会话提示
+      noSessionsDiv.style.display = 'block';
     }
   } catch (error) {
     console.error('更新会话列表失败:', error);
+    // 发生错误时重置为无会话状态
+    sessionsContainer.innerHTML = `
+      <div id="noSessions" class="no-sessions">
+        暂无录制会话
+      </div>
+    `;
+    sessionsCount.textContent = '0';
   }
 }
 
@@ -133,19 +149,17 @@ function updateStatusDisplay(state, currentTabId) {
   const stopButton = document.getElementById('stopCapture');
   const stopAllButton = document.getElementById('stopAllCapture');
   
-  // 修改状态判断逻辑
+  // 修改状态判断逻辑，确保与background.js一致
   const normalizedCurrentUrl = state.url ? normalizeUrl(state.url) : null;
   
-  // 修改判断逻辑，直接使用数组
+  // 使用正确的数据结构进行判断
   const isCurrentUrlRecording = normalizedCurrentUrl && 
-    (state.recordingTabs || []).some(tab => {
-      return normalizeUrl(tab.url) === normalizedCurrentUrl;
-    });
+    (state.recordingTabs || []).some(tab => normalizeUrl(tab.url) === normalizedCurrentUrl);
       
   const isPending = normalizedCurrentUrl && 
     (state.pendingConnections || []).includes(normalizedCurrentUrl);
       
-  // 修改这里：直接使用数组长度
+  // 使用正确的数组长度判断
   const hasAnyRecording = state.recordingTabs && state.recordingTabs.length > 0;
 
   console.log('状态判断结果:', {
@@ -217,7 +231,11 @@ function updateUI(data) {
     console.log('更新UI:', {
       currentTabId,
       currentUrl,
-      sessions: sessions?.length,
+      sessions: sessions?.map(s => ({
+        tabId: s.tabId,
+        url: s.url,
+        stats: s.stats
+      })),
       recordingTabs: state.recordingTabs
     });
     
