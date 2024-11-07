@@ -94,7 +94,7 @@ async def handle_audio(websocket, path):
     
     # 创建输出文件
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    output_file = os.path.join(AUDIO_DIR, f'audio_{timestamp}.wav')
+    output_file = os.path.join(AUDIO_DIR, f'audio_{timestamp}_{client_id}.wav')
     
     # 创建转换器
     converter = AudioConverter(output_file)
